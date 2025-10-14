@@ -19,6 +19,17 @@ services:
       timeout: 10s
       retries: 3
 
+  auction-ui:
+    image: auction-ui
+    container_name: auction-react-ui
+    ports:
+      - "80:80"
+    networks:
+      - auction-network
+    restart: unless-stopped
+    depends_on:
+      - fastapi-server
+
   sqlite-web:
     image: coleifer/sqlite-web
     container_name: auction-sqlite-web
