@@ -1,11 +1,25 @@
-from fastapi import FastAPI, HTTPException, Depends
-from contextlib import asynccontextmanager
-import aiosqlite
 import os
+from contextlib import asynccontextmanager
+
+import aiosqlite
+from fastapi import FastAPI, HTTPException, Depends
+from pydantic import BaseModel
+
 from logger import setup_logging, get_logger
 
 setup_logging()
 logger = get_logger(__name__)
+
+# Pydantic Models
+class Item(BaseModel):
+    id: int
+    image: str
+    title: str
+    minimumBid: int
+    details: str
+
+    class Config:
+        populate_by_name = True
 
 db_connection = None
 
@@ -61,4 +75,34 @@ async def health_check(db: aiosqlite.Connection = Depends(get_db)):
         raise HTTPException(
             status_code=503,
             detail=f"Database unhealthy: {str(e)}"
+        )
+
+@app.get("/items", response_model=list[Item])
+async def get_items(db: aiosqlite.Connection = Depends(get_db)):
+    """Get all auction items"""
+    try:
+        cursor = await db.execute(
+            "SELECT id, img_location, title, min_bid, details FROM items"
+        )
+        rows = await cursor.fetchall()
+        await cursor.close()
+
+        items = [
+            Item(
+                id=row[0],
+                image=row[1],
+                title=row[2],
+                minimumBid=row[3],
+                details=row[4]
+            )
+            for row in rows
+        ]
+
+        logger.info(f"Successfully fetched {len(items)} items")
+        return items
+    except Exception as e:
+        logger.error(f"Failed to fetch items: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to fetch items from database"
         )
