@@ -1,0 +1,47 @@
+version: '3.8'
+
+services:
+  fastapi-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: auction-fastapi-server
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+    networks:
+      - auction-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  sqlite-web:
+    image: coleifer/sqlite-web
+    container_name: auction-sqlite-web
+    volumes:
+      - ./data:/data
+    networks:
+      - auction-network
+    command: ["sqlite_web", "/data/auction.db", "--host", "0.0.0.0", "--port", "8080"]
+    restart: unless-stopped
+
+  nginx:
+    image: nginx:alpine
+    container_name: sqlite-nginx
+    ports:
+      - "8001:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./.htpasswd:/etc/nginx/.htpasswd:ro
+    depends_on:
+      - sqlite-web
+    networks:
+      - auction-network
+
+networks:
+  auction-network:
+    driver: bridge
