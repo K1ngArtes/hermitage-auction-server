@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 import aiosqlite
 from fastapi import FastAPI, HTTPException, Depends
 from pydantic import BaseModel
+from starlette.middleware.cors import CORSMiddleware
 
 from logger import setup_logging, get_logger
 
@@ -43,6 +44,15 @@ async def lifespan(app: FastAPI):
     logger.info("Database connection closed")
 
 app = FastAPI(lifespan=lifespan)
+
+# Configure CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allow all origins in development
+    allow_credentials=True,
+    allow_methods=["*"],  # Allow all methods (GET, POST, etc.)
+    allow_headers=["*"],  # Allow all headers
+)
 
 async def get_db():
     return db_connection
