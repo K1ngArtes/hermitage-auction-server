@@ -14,10 +14,14 @@ logger = get_logger(__name__)
 # Pydantic Models
 class Item(BaseModel):
     id: int
-    image: str
     title: str
+    image: str
+    author: str
+    authorDescription: str | None
     minimumBid: int
-    details: str
+    year: int
+    description: str
+    showOrder: int
 
     class Config:
         populate_by_name = True
@@ -89,10 +93,14 @@ async def health_check(db: aiosqlite.Connection = Depends(get_db)):
 
 @app.get("/items", response_model=list[Item])
 async def get_items(db: aiosqlite.Connection = Depends(get_db)):
-    """Get all auction items"""
+    """Get all auction items ordered by show_order"""
     try:
+        logger.info("Fetching items from database")
         cursor = await db.execute(
-            "SELECT id, img_location, title, min_bid, details FROM items"
+            """SELECT id, title, img_location, author, author_description,
+                      min_bid, year, description, show_order
+               FROM items
+               ORDER BY show_order"""
         )
         rows = await cursor.fetchall()
         await cursor.close()
@@ -100,10 +108,14 @@ async def get_items(db: aiosqlite.Connection = Depends(get_db)):
         items = [
             Item(
                 id=row[0],
-                image=row[1],
-                title=row[2],
-                minimumBid=row[3],
-                details=row[4]
+                title=row[1],
+                image=row[2],
+                author=row[3],
+                authorDescription=row[4],
+                minimumBid=row[5],
+                year=row[6],
+                description=row[7],
+                showOrder=row[8]
             )
             for row in rows
         ]
