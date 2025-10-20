@@ -68,3 +68,5 @@ htmlcov/
 
 # Nginx auth files
 .htpasswd
+
+notes.txt
