@@ -26,6 +26,13 @@ class Item(BaseModel):
     class Config:
         populate_by_name = True
 
+class LoginRequest(BaseModel):
+    name: str
+    email: str
+
+class LoginResponse(BaseModel):
+    id: int
+
 db_connection = None
 
 @asynccontextmanager
@@ -127,4 +134,43 @@ async def get_items(db: aiosqlite.Connection = Depends(get_db)):
         raise HTTPException(
             status_code=500,
             detail="Failed to fetch items from database"
+        )
+
+@app.post("/login", response_model=LoginResponse)
+async def login(request: LoginRequest, db: aiosqlite.Connection = Depends(get_db)):
+    """Login or create user account"""
+    try:
+        logger.info(f"Login attempt for email: {request.email}")
+
+        cursor = await db.execute(
+            "INSERT INTO accounts (name, email) VALUES (?, ?)",
+            (request.name, request.email)
+        )
+        await db.commit()
+        user_id = cursor.lastrowid
+        await cursor.close()
+
+        logger.info(f"Created new user with id {user_id}: {request.email}")
+        return LoginResponse(id=user_id)
+
+    except aiosqlite.IntegrityError:
+        logger.info(f"User already exists: {request.email}")
+        cursor = await db.execute(
+            "SELECT id FROM accounts WHERE email = ?",
+            (request.email,)
+        )
+        row = await cursor.fetchone()
+        await cursor.close()
+
+        if row:
+            logger.info(f"Returning existing user id {row[0]}: {request.email}")
+            return LoginResponse(id=row[0])
+        else:
+            logger.error(f"Database inconsistency for email: {request.email}")
+            raise HTTPException(status_code=500, detail="Database error")
+    except Exception as e:
+        logger.error(f"Login failed for {request.email}: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail="Login failed"
         )
