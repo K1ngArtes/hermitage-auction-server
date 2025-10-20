@@ -2,14 +2,39 @@ import os
 from contextlib import asynccontextmanager
 
 import aiosqlite
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, Response
 from pydantic import BaseModel
 from starlette.middleware.cors import CORSMiddleware
+from itsdangerous import URLSafeTimedSerializer, SignatureExpired, BadSignature
 
 from logger import setup_logging, get_logger
 
 setup_logging()
 logger = get_logger(__name__)
+
+# Session configuration
+SECRET_KEY = os.getenv("SECRET_KEY", "4peK4Z*Q4vRW")
+SESSION_MAX_AGE = 7 * 24 * 60 * 60  # 7 days in seconds
+
+# Initialize serializer
+serializer = URLSafeTimedSerializer(SECRET_KEY)
+
+# Security warning
+if SECRET_KEY == "dev-secret-key-change-in-production":
+    logger.warning("Using default SECRET_KEY - NOT SECURE for production!")
+
+def create_session_token(user_id: int) -> str:
+    """Create signed session token containing user ID"""
+    return serializer.dumps(user_id)
+
+def validate_session_token(token: str) -> int | None:
+    """Validate and extract user ID from session token"""
+    try:
+        user_id = serializer.loads(token, max_age=SESSION_MAX_AGE)
+        return user_id
+    except (SignatureExpired, BadSignature) as e:
+        logger.warning(f"Invalid session token: {str(e)}")
+        return None
 
 # Pydantic Models
 class Item(BaseModel):
@@ -136,9 +161,9 @@ async def get_items(db: aiosqlite.Connection = Depends(get_db)):
             detail="Failed to fetch items from database"
         )
 
-@app.post("/login", response_model=LoginResponse)
+@app.post("/login")
 async def login(request: LoginRequest, db: aiosqlite.Connection = Depends(get_db)):
-    """Login or create user account"""
+    """Login or create user account and set session cookie"""
     try:
         logger.info(f"Login attempt for email: {request.email}")
 
@@ -149,9 +174,7 @@ async def login(request: LoginRequest, db: aiosqlite.Connection = Depends(get_db
         await db.commit()
         user_id = cursor.lastrowid
         await cursor.close()
-
         logger.info(f"Created new user with id {user_id}: {request.email}")
-        return LoginResponse(id=user_id)
 
     except aiosqlite.IntegrityError:
         logger.info(f"User already exists: {request.email}")
@@ -163,14 +186,32 @@ async def login(request: LoginRequest, db: aiosqlite.Connection = Depends(get_db
         await cursor.close()
 
         if row:
-            logger.info(f"Returning existing user id {row[0]}: {request.email}")
-            return LoginResponse(id=row[0])
+            user_id = row[0]
         else:
             logger.error(f"Database inconsistency for email: {request.email}")
             raise HTTPException(status_code=500, detail="Database error")
     except Exception as e:
         logger.error(f"Login failed for {request.email}: {str(e)}", exc_info=True)
-        raise HTTPException(
-            status_code=500,
-            detail="Login failed"
-        )
+        raise HTTPException(status_code=500, detail="Login failed")
+
+    # Create session token
+    session_token = create_session_token(user_id)
+
+    # Create response with cookie
+    response = Response(
+        content='{"success": true, "message": "Logged in successfully"}',
+        media_type="application/json"
+    )
+
+    response.set_cookie(
+        key="session",
+        value=session_token,
+        max_age=SESSION_MAX_AGE,
+        httponly=True,
+        secure=False,  # Change to True in production with HTTPS
+        samesite="lax",
+        path="/"
+    )
+
+    logger.info(f"Session cookie set for user {user_id}")
+    return response
