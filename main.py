@@ -225,6 +225,24 @@ async def login(request: LoginRequest, db: aiosqlite.Connection = Depends(get_db
     logger.info(f"Session cookie set for user {user_id}")
     return response
 
+@app.post("/logout")
+async def logout():
+    """Logout by clearing the session cookie"""
+    response = Response(
+        content='{"success": true, "message": "Logged out successfully"}',
+        media_type="application/json"
+    )
+
+    response.delete_cookie(
+        key="session",
+        path="/",
+        samesite="none",
+        secure=True
+    )
+
+    logger.info("User logged out - session cookie cleared")
+    return response
+
 @app.post("/bid")
 async def place_bid(
     request: BidRequest,
