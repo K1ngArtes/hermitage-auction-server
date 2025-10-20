@@ -1,8 +1,9 @@
 import os
+import uuid
 from contextlib import asynccontextmanager
 
 import aiosqlite
-from fastapi import FastAPI, HTTPException, Depends, Response
+from fastapi import FastAPI, HTTPException, Depends, Response, Cookie
 from pydantic import BaseModel
 from starlette.middleware.cors import CORSMiddleware
 from itsdangerous import URLSafeTimedSerializer, SignatureExpired, BadSignature
@@ -58,6 +59,10 @@ class LoginRequest(BaseModel):
 class LoginResponse(BaseModel):
     id: int
 
+class BidRequest(BaseModel):
+    item_id: int
+    amount: int
+
 db_connection = None
 
 @asynccontextmanager
@@ -84,7 +89,13 @@ app = FastAPI(lifespan=lifespan)
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allow all origins in development
+    allow_origins=[
+        "https://92385df15d83.ngrok-free.app",
+        "http://localhost:3000",
+        "http://localhost:80",
+        "http://localhost",
+        "https://auriform-derrick-spectrographic.ngrok-free.dev",
+    ],
     allow_credentials=True,
     allow_methods=["*"],  # Allow all methods (GET, POST, etc.)
     allow_headers=["*"],  # Allow all headers
@@ -194,10 +205,8 @@ async def login(request: LoginRequest, db: aiosqlite.Connection = Depends(get_db
         logger.error(f"Login failed for {request.email}: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Login failed")
 
-    # Create session token
     session_token = create_session_token(user_id)
 
-    # Create response with cookie
     response = Response(
         content='{"success": true, "message": "Logged in successfully"}',
         media_type="application/json"
@@ -208,10 +217,85 @@ async def login(request: LoginRequest, db: aiosqlite.Connection = Depends(get_db
         value=session_token,
         max_age=SESSION_MAX_AGE,
         httponly=True,
-        secure=False,  # Change to True in production with HTTPS
-        samesite="lax",
+        secure=True,  # Change to True in production with HTTPS
+        samesite="none",
         path="/"
     )
 
     logger.info(f"Session cookie set for user {user_id}")
     return response
+
+@app.post("/bid")
+async def place_bid(
+    request: BidRequest,
+    db: aiosqlite.Connection = Depends(get_db),
+    session: str | None = Cookie(None)
+):
+    """Place a bid on an auction item"""
+    # Validate session cookie
+    if not session:
+        logger.warning("Bid attempt without session cookie")
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    user_id = validate_session_token(session)
+    if not user_id:
+        logger.warning("Bid attempt with invalid session token")
+        raise HTTPException(status_code=401, detail="Invalid or expired session")
+
+    try:
+        logger.info(f"Bid attempt by user {user_id} for item {request.item_id}: ${request.amount}")
+
+        cursor = await db.execute(
+            "SELECT min_bid FROM items WHERE id = ?",
+            (request.item_id,)
+        )
+        item_row = await cursor.fetchone()
+        await cursor.close()
+
+        if not item_row:
+            logger.warning(f"Bid attempt for non-existent item {request.item_id}")
+            raise HTTPException(status_code=404, detail="Item not found")
+
+        min_bid = item_row[0]
+
+        if request.amount < min_bid:
+            logger.info(f"Bid rejected: amount ${request.amount} below minimum ${min_bid}")
+            raise HTTPException(
+                status_code=400,
+                detail=f"Bid amount must be at least ${min_bid}"
+            )
+
+        # Check for existing higher bids
+        cursor = await db.execute(
+            "SELECT MAX(amount) FROM bids WHERE item_id = ?",
+            (request.item_id,)
+        )
+        max_bid_row = await cursor.fetchone()
+        await cursor.close()
+
+        max_existing_bid = max_bid_row[0] if max_bid_row and max_bid_row[0] else 0
+
+        if request.amount <= max_existing_bid:
+            logger.info(f"Bid rejected: amount ${request.amount} not higher than current bid ${max_existing_bid}")
+            raise HTTPException(
+                status_code=400,
+                detail=f"There is a new higher bid of £${max_existing_bid}!"
+            )
+
+        # Insert the bid
+        bid_uuid = str(uuid.uuid4())
+        cursor = await db.execute(
+            "INSERT INTO bids (uuid, user_id, item_id, amount) VALUES (?, ?, ?, ?)",
+            (bid_uuid, user_id, request.item_id, request.amount)
+        )
+        await db.commit()
+        await cursor.close()
+
+        logger.info(f"Bid placed successfully: {bid_uuid} by user {user_id} for ${request.amount}")
+        return {"message": "Bid placed successfully"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to place bid: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to place bid")
