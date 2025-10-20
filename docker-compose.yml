@@ -7,7 +7,7 @@ services:
       dockerfile: Dockerfile
     container_name: auction-fastapi-server
     ports:
-      - "8000:8000"
+      - "8002:8000"
     volumes:
       - ./data:/app/data
     networks:
@@ -23,7 +23,7 @@ services:
     image: auction-ui
     container_name: auction-react-ui
     ports:
-      - "80:80"
+      - "8000:80"
     networks:
       - auction-network
     restart: unless-stopped
