@@ -140,10 +140,21 @@ async def get_items(db: aiosqlite.Connection = Depends(get_db)):
     try:
         logger.info("Fetching items from database")
         cursor = await db.execute(
-            """SELECT id, title, img_location, author, author_description,
-                      min_bid, year, description, show_order
-               FROM items
-               ORDER BY show_order"""
+            """SELECT
+                   i.id,
+                   i.title,
+                   i.img_location,
+                   i.author,
+                   i.author_description,
+                   MAX(i.min_bid, COALESCE(MAX(b.amount), 0)) as minimum_bid,
+                   i.year,
+                   i.description,
+                   i.show_order
+               FROM items i
+               LEFT JOIN bids b ON i.id = b.item_id
+               GROUP BY i.id, i.title, i.img_location, i.author, i.author_description,
+                        i.min_bid, i.year, i.description, i.show_order
+               ORDER BY i.show_order"""
         )
         rows = await cursor.fetchall()
         await cursor.close()
