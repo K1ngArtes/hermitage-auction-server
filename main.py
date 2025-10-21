@@ -76,7 +76,14 @@ async def lifespan(app: FastAPI):
     os.makedirs(os.path.dirname(db_path), exist_ok=True)
 
     db_connection = await aiosqlite.connect(db_path)
-    logger.info(f"Database connected: {db_path}")
+
+    # Enable WAL mode for better concurrent access
+    await db_connection.execute("PRAGMA journal_mode=WAL")
+
+    # Set busy timeout to 5 seconds
+    await db_connection.execute("PRAGMA busy_timeout=5000")
+
+    logger.info(f"Database connected: {db_path} (WAL mode enabled)")
 
     yield
 
