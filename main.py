@@ -328,3 +328,56 @@ async def place_bid(
     except Exception as e:
         logger.error(f"Failed to place bid: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to place bid")
+
+@app.get("/bid/{item_id}")
+async def get_user_bid(
+    item_id: int,
+    db: aiosqlite.Connection = Depends(get_db),
+    session: str | None = Cookie(None)
+):
+    """Get user's latest bid for a specific item"""
+    if not session:
+        logger.info(f"Bid retrieval attempt for item {item_id} without session cookie")
+        raise HTTPException(status_code=404, detail="Not found")
+
+    user_id = validate_session_token(session)
+    if not user_id:
+        logger.info(f"Bid retrieval attempt for item {item_id} with invalid session")
+        raise HTTPException(status_code=404, detail="Not found")
+
+    try:
+        cursor = await db.execute(
+            """SELECT amount
+               FROM bids
+               WHERE user_id = ? AND item_id = ?
+               ORDER BY created_at DESC
+               LIMIT 1""",
+            (user_id, item_id)
+        )
+        bid_row = await cursor.fetchone()
+        await cursor.close()
+
+        if not bid_row:
+            raise HTTPException(status_code=404, detail="Not found")
+
+        user_amount = bid_row[0]
+
+        cursor = await db.execute(
+            """SELECT MAX(amount)
+               FROM bids
+               WHERE item_id = ?""",
+            (item_id,)
+        )
+        max_bid_row = await cursor.fetchone()
+        await cursor.close()
+
+        max_amount = max_bid_row[0] if max_bid_row and max_bid_row[0] else 0
+        is_highest = user_amount >= max_amount
+
+        return {"amount": user_amount, "is_highest": is_highest}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to retrieve bid: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to retrieve bid")
