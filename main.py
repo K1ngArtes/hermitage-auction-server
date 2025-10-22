@@ -473,3 +473,43 @@ async def get_user_bid(
     except Exception as e:
         logger.error(f"Failed to retrieve bid: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to retrieve bid")
+
+@app.delete("/bid/{id}")
+async def delete_bid(
+    id: str,
+    db: aiosqlite.Connection = Depends(get_db),
+    session: str | None = Cookie(None)
+):
+    """Delete user's bid by UUID"""
+    if not session:
+        logger.warning("Bid deletion attempt without session cookie")
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    user_id = validate_session_token(session)
+    if not user_id:
+        logger.warning("Bid deletion attempt with invalid session token")
+        raise HTTPException(status_code=401, detail="Invalid or expired session")
+
+    try:
+        logger.info(f"Bid deletion attempt by user {user_id} for bid {id}")
+
+        cursor = await db.execute(
+            "DELETE FROM bids WHERE uuid = ? AND user_id = ? RETURNING uuid",
+            (id, user_id)
+        )
+        row = await cursor.fetchone()
+        await cursor.close()
+        await db.commit()
+
+        if not row:
+            logger.warning(f"Bid {id} not found or doesn't belong to user {user_id}")
+            raise HTTPException(status_code=404, detail="Bid not found")
+
+        logger.info(f"Bid {id} deleted successfully by user {user_id}")
+        return {"message": "Bid deleted successfully"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to delete bid: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to delete bid")
