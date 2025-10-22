@@ -438,7 +438,7 @@ async def get_user_bid(
 
     try:
         cursor = await db.execute(
-            """SELECT amount
+            """SELECT uuid, amount
                FROM bids
                WHERE user_id = ? AND item_id = ?
                ORDER BY created_at DESC
@@ -451,7 +451,8 @@ async def get_user_bid(
         if not bid_row:
             raise HTTPException(status_code=404, detail="Not found")
 
-        user_amount = bid_row[0]
+        bid_uuid = bid_row[0]
+        user_amount = bid_row[1]
 
         cursor = await db.execute(
             """SELECT MAX(amount)
@@ -465,7 +466,7 @@ async def get_user_bid(
         max_amount = max_bid_row[0] if max_bid_row and max_bid_row[0] else 0
         is_highest = user_amount >= max_amount
 
-        return {"amount": user_amount, "is_highest": is_highest}
+        return {"bid_id": bid_uuid, "amount": user_amount, "is_highest": is_highest}
 
     except HTTPException:
         raise
