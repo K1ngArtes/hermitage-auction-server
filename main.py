@@ -280,14 +280,16 @@ async def login(request: LoginRequest, db: aiosqlite.Connection = Depends(get_db
     except aiosqlite.IntegrityError:
         logger.info(f"User already exists: {request.email}")
         cursor = await db.execute(
-            "SELECT id FROM accounts WHERE email = ?",
-            (request.email,)
+            "UPDATE accounts SET name = ? WHERE email = ? RETURNING id",
+            (request.name, request.email,)
         )
         row = await cursor.fetchone()
         await cursor.close()
+        await db.commit()
 
         if row:
             user_id = row[0]
+            logger.info(f"Updated name for existing user id {user_id}: {request.email}")
         else:
             logger.error(f"Database inconsistency for email: {request.email}")
             raise HTTPException(status_code=500, detail="Database error")
@@ -396,7 +398,7 @@ async def place_bid(
             logger.info(f"Bid rejected: amount ${request.amount} not higher than current bid ${max_existing_bid}")
             raise HTTPException(
                 status_code=400,
-                detail=f"There is a new higher bid of £${max_existing_bid}!"
+                detail=f"There is a new higher bid of £{max_existing_bid}!"
             )
 
         # Insert the bid
