@@ -466,7 +466,7 @@ async def get_user_bid(
         max_amount = max_bid_row[0] if max_bid_row and max_bid_row[0] else 0
         is_highest = user_amount >= max_amount
 
-        return {"bid_id": bid_uuid, "amount": user_amount, "is_highest": is_highest}
+        return {"uid": bid_uuid, "amount": user_amount, "is_highest": is_highest}
 
     except HTTPException:
         raise
@@ -494,16 +494,38 @@ async def delete_bid(
         logger.info(f"Bid deletion attempt by user {user_id} for bid {id}")
 
         cursor = await db.execute(
-            "DELETE FROM bids WHERE uuid = ? AND user_id = ? RETURNING uuid",
+            "SELECT item_id FROM bids WHERE uuid = ? AND user_id = ?",
             (id, user_id)
         )
-        row = await cursor.fetchone()
+        bid_row = await cursor.fetchone()
         await cursor.close()
-        await db.commit()
 
-        if not row:
+        if not bid_row:
             logger.warning(f"Bid {id} not found or doesn't belong to user {user_id}")
             raise HTTPException(status_code=404, detail="Bid not found")
+
+        item_id = bid_row[0]
+
+        cursor = await db.execute(
+            "SELECT is_closed FROM items WHERE id = ?",
+            (item_id,)
+        )
+        item_row = await cursor.fetchone()
+        await cursor.close()
+
+        if item_row and bool(item_row[0]):
+            logger.info(f"Bid deletion rejected: item {item_id} is closed")
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot cancel bid - bidding for this item has closed"
+            )
+
+        cursor = await db.execute(
+            "DELETE FROM bids WHERE uuid = ? AND user_id = ?",
+            (id, user_id)
+        )
+        await cursor.close()
+        await db.commit()
 
         logger.info(f"Bid {id} deleted successfully by user {user_id}")
         return {"message": "Bid deleted successfully"}
