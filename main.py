@@ -48,6 +48,7 @@ class Item(BaseModel):
     year: int
     description: str
     showOrder: int
+    isClosed: bool
 
     class Config:
         populate_by_name = True
@@ -155,11 +156,12 @@ async def get_items(db: aiosqlite.Connection = Depends(get_db)):
                    MAX(i.min_bid, COALESCE(MAX(b.amount), 0)) as minimum_bid,
                    i.year,
                    i.description,
-                   i.show_order
+                   i.show_order,
+                   i.is_closed
                FROM items i
                LEFT JOIN bids b ON i.id = b.item_id
                GROUP BY i.id, i.title, i.img_location, i.author, i.author_description,
-                        i.min_bid, i.year, i.description, i.show_order
+                        i.min_bid, i.year, i.description, i.show_order, i.is_closed
                ORDER BY i.show_order"""
         )
         rows = await cursor.fetchall()
@@ -175,7 +177,8 @@ async def get_items(db: aiosqlite.Connection = Depends(get_db)):
                 minimumBid=row[5],
                 year=row[6],
                 description=row[7],
-                showOrder=row[8]
+                showOrder=row[8],
+                isClosed=bool(row[9])
             )
             for row in rows
         ]
