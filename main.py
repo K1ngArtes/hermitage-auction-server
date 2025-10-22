@@ -284,7 +284,7 @@ async def place_bid(
         logger.info(f"Bid attempt by user {user_id} for item {request.item_id}: ${request.amount}")
 
         cursor = await db.execute(
-            "SELECT min_bid FROM items WHERE id = ?",
+            "SELECT min_bid, is_closed FROM items WHERE id = ?",
             (request.item_id,)
         )
         item_row = await cursor.fetchone()
@@ -295,6 +295,13 @@ async def place_bid(
             raise HTTPException(status_code=404, detail="Item not found")
 
         min_bid = item_row[0]
+        is_closed = bool(item_row[1])
+
+        if is_closed:
+            raise HTTPException(
+                status_code=400,
+                detail="Bidding for this item has closed"
+            )
 
         if request.amount < min_bid:
             logger.info(f"Bid rejected: amount ${request.amount} below minimum ${min_bid}")
