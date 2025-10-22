@@ -24,9 +24,11 @@ serializer = URLSafeTimedSerializer(SECRET_KEY)
 if SECRET_KEY == "dev-secret-key-change-in-production":
     logger.warning("Using default SECRET_KEY - NOT SECURE for production!")
 
+
 def create_session_token(user_id: int) -> str:
     """Create signed session token containing user ID"""
     return serializer.dumps(user_id)
+
 
 def validate_session_token(token: str) -> int | None:
     """Validate and extract user ID from session token"""
@@ -36,6 +38,7 @@ def validate_session_token(token: str) -> int | None:
     except (SignatureExpired, BadSignature) as e:
         logger.warning(f"Invalid session token: {str(e)}")
         return None
+
 
 # Pydantic Models
 class Item(BaseModel):
@@ -53,18 +56,23 @@ class Item(BaseModel):
     class Config:
         populate_by_name = True
 
+
 class LoginRequest(BaseModel):
     name: str
     email: str
 
+
 class LoginResponse(BaseModel):
     id: int
+
 
 class BidRequest(BaseModel):
     item_id: int
     amount: int
 
+
 db_connection = None
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -92,6 +100,7 @@ async def lifespan(app: FastAPI):
     await db_connection.close()
     logger.info("Database connection closed")
 
+
 app = FastAPI(lifespan=lifespan)
 
 # Configure CORS
@@ -108,12 +117,15 @@ app.add_middleware(
     allow_headers=["*"],  # Allow all headers
 )
 
+
 async def get_db():
     return db_connection
+
 
 @app.get("/")
 async def read_root():
     return {"message": "Hello World!"}
+
 
 @app.get("/healthcheck")
 async def health_check(db: aiosqlite.Connection = Depends(get_db)):
@@ -140,6 +152,7 @@ async def health_check(db: aiosqlite.Connection = Depends(get_db)):
             status_code=503,
             detail=f"Database unhealthy: {str(e)}"
         )
+
 
 @app.get("/items", response_model=list[Item])
 async def get_items(db: aiosqlite.Connection = Depends(get_db)):
@@ -191,6 +204,63 @@ async def get_items(db: aiosqlite.Connection = Depends(get_db)):
             status_code=500,
             detail="Failed to fetch items from database"
         )
+
+
+@app.get("/item/{id}", response_model=Item)
+async def get_item(id: int, db: aiosqlite.Connection = Depends(get_db)):
+    """Get a single auction item by ID"""
+    try:
+        logger.info(f"Fetching item {id} from database")
+        cursor = await db.execute(
+            """SELECT
+                   i.id,
+                   i.title,
+                   i.img_location,
+                   i.author,
+                   i.author_description,
+                   MAX(i.min_bid, COALESCE(MAX(b.amount), 0)) as minimum_bid,
+                   i.year,
+                   i.description,
+                   i.show_order,
+                   i.is_closed
+               FROM items i
+               LEFT JOIN bids b ON i.id = b.item_id
+               WHERE i.id = ?
+               GROUP BY i.id, i.title, i.img_location, i.author, i.author_description,
+                        i.min_bid, i.year, i.description, i.show_order, i.is_closed""",
+            (id,)
+        )
+        row = await cursor.fetchone()
+        await cursor.close()
+
+        if not row:
+            logger.warning(f"Item {id} not found")
+            raise HTTPException(status_code=404, detail="Item not found")
+
+        item = Item(
+            id=row[0],
+            title=row[1],
+            image=row[2],
+            author=row[3],
+            authorDescription=row[4],
+            minimumBid=row[5],
+            year=row[6],
+            description=row[7],
+            showOrder=row[8],
+            isClosed=bool(row[9])
+        )
+
+        logger.info(f"Successfully fetched item {id}")
+        return item
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to fetch item {id}: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to fetch item from database"
+        )
+
 
 @app.post("/login")
 async def login(request: LoginRequest, db: aiosqlite.Connection = Depends(get_db)):
@@ -245,6 +315,7 @@ async def login(request: LoginRequest, db: aiosqlite.Connection = Depends(get_db
     logger.info(f"Session cookie set for user {user_id}")
     return response
 
+
 @app.post("/logout")
 async def logout():
     """Logout by clearing the session cookie"""
@@ -263,11 +334,12 @@ async def logout():
     logger.info("User logged out - session cookie cleared")
     return response
 
+
 @app.post("/bid")
 async def place_bid(
-    request: BidRequest,
-    db: aiosqlite.Connection = Depends(get_db),
-    session: str | None = Cookie(None)
+        request: BidRequest,
+        db: aiosqlite.Connection = Depends(get_db),
+        session: str | None = Cookie(None)
 ):
     """Place a bid on an auction item"""
     # Validate session cookie
@@ -345,11 +417,12 @@ async def place_bid(
         logger.error(f"Failed to place bid: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to place bid")
 
+
 @app.get("/bid/{item_id}")
 async def get_user_bid(
-    item_id: int,
-    db: aiosqlite.Connection = Depends(get_db),
-    session: str | None = Cookie(None)
+        item_id: int,
+        db: aiosqlite.Connection = Depends(get_db),
+        session: str | None = Cookie(None)
 ):
     """Get user's latest bid for a specific item"""
     if not session:
