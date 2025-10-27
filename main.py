@@ -562,10 +562,10 @@ async def donate(
 
         cursor = await db.execute(
             """INSERT INTO donations (uuid, user_id, amount, updated_at)
-               VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+               VALUES (?, ?, ?, datetime('now', 'utc'))
                ON CONFLICT(user_id) DO UPDATE SET
                    amount = excluded.amount,
-                   updated_at = CURRENT_TIMESTAMP""",
+                   updated_at = datetime('now', 'utc')""",
             (donation_uuid, user_id, request.amount)
         )
         await cursor.close()
@@ -578,3 +578,40 @@ async def donate(
     except Exception as e:
         logger.error(f"Failed to record donation: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to record donation")
+
+@app.get("/donations")
+async def get_donation(
+    db: aiosqlite.Connection = Depends(get_db),
+    session: str | None = Cookie(None)
+):
+    """Get user's donation amount"""
+    if not session:
+        logger.warning("Donation retrieval attempt without session cookie")
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    user_id = validate_session_token(session)
+    if not user_id:
+        logger.warning("Donation retrieval attempt with invalid session token")
+        raise HTTPException(status_code=401, detail="Invalid or expired session")
+
+    try:
+        cursor = await db.execute(
+            "SELECT amount FROM donations WHERE user_id = ?",
+            (user_id,)
+        )
+        row = await cursor.fetchone()
+        await cursor.close()
+
+        if not row:
+            logger.info(f"No donation found for user {user_id}")
+            raise HTTPException(status_code=400, detail="No donation found")
+
+        amount = row[0]
+        logger.info(f"Retrieved donation for user {user_id}: ${amount}")
+        return {"amount": amount}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to retrieve donation: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to retrieve donation")
