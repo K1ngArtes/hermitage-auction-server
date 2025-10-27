@@ -71,6 +71,10 @@ class BidRequest(BaseModel):
     amount: int
 
 
+class DonateRequest(BaseModel):
+    amount: int
+
+
 db_connection = None
 
 
@@ -535,3 +539,42 @@ async def delete_bid(
     except Exception as e:
         logger.error(f"Failed to delete bid: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to delete bid")
+
+@app.post("/donate")
+async def donate(
+    request: DonateRequest,
+    db: aiosqlite.Connection = Depends(get_db),
+    session: str | None = Cookie(None)
+):
+    """Create or update user's donation"""
+    if not session:
+        logger.warning("Donation attempt without session cookie")
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    user_id = validate_session_token(session)
+    if not user_id:
+        logger.warning("Donation attempt with invalid session token")
+        raise HTTPException(status_code=401, detail="Invalid or expired session")
+
+    try:
+        logger.info(f"Donation attempt by user {user_id}: ${request.amount}")
+        donation_uuid = str(uuid.uuid4())
+
+        cursor = await db.execute(
+            """INSERT INTO donations (uuid, user_id, amount, updated_at)
+               VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+               ON CONFLICT(user_id) DO UPDATE SET
+                   amount = excluded.amount,
+                   updated_at = CURRENT_TIMESTAMP""",
+            (donation_uuid, user_id, request.amount)
+        )
+        await cursor.close()
+        await db.commit()
+
+        logger.info(f"Donation recorded successfully by user {user_id}: ${request.amount}")
+        return {"message": "Donation recorded successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to record donation: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to record donation")
