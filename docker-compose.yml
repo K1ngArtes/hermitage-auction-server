@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   fastapi-server:
-    image: auction-fastapi-server
+    image: arturromanov1/auction-fastapi-server
     container_name: auction-fastapi-server
     ports:
       - "8002:8000"
