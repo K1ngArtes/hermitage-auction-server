@@ -13,3 +13,5 @@ build
 .env
 *.md
 data/
+.htpasswd
+nginx.conf
