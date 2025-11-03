@@ -23,6 +23,8 @@ services:
   auction-ui:
     image: arturromanov1/auction-ui
     container_name: auction-react-ui
+    env_file:
+      - .env
     ports:
       - "8000:80"
     networks:
