@@ -1,0 +1,11 @@
+[project]
+name = "hermitage-auction-server"
+version = "0.1.0"
+description = "FastAPI-based auction server application"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.104.0",
+    "uvicorn[standard]>=0.24.0",
+    "aiosqlite>=0.19.0",
+    "itsdangerous>=2.1.0",
+]

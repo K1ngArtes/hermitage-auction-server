@@ -15,3 +15,5 @@ build
 data/
 .htpasswd
 nginx.conf
+.venv
+.python-version
