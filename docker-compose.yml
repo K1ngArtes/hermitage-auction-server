@@ -21,7 +21,7 @@ services:
       retries: 3
 
   auction-ui:
-    image: auction-ui
+    image: arturromanov1/auction-ui
     container_name: auction-react-ui
     ports:
       - "8000:80"
