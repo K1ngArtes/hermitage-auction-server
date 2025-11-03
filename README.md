@@ -28,12 +28,20 @@ A FastAPI-based auction server application for managing auction items, bids, and
 
 ## Setup & Running
 
-1. **Copy environment configuration**
+1. **Initialize the database**
+
+   Create the database and schema:
+   ```bash
+   mkdir -p data
+   sqlite3 data/auction.db < schema.sql
+   ```
+
+2. **Copy environment configuration**
    ```bash
    cp .env.example .env
    ```
 
-2. **Configure environment variables**
+3. **Configure environment variables**
 
    Edit `.env` and set your SECRET_KEY:
    ```bash
@@ -41,7 +49,7 @@ A FastAPI-based auction server application for managing auction items, bids, and
    python -c "import secrets; print(secrets.token_urlsafe(32))"
    ```
 
-3. **Start the application**
+4. **Start the application**
    ```bash
    docker-compose up -d
    ```
