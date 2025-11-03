@@ -14,15 +14,13 @@ setup_logging()
 logger = get_logger(__name__)
 
 # Session configuration
-SECRET_KEY = os.getenv("SECRET_KEY", "4peK4Z*Q4vRW")
+SECRET_KEY = os.getenv("SECRET_KEY")
+if not SECRET_KEY:
+    raise ValueError("SECRET_KEY environment variable must be set")
 SESSION_MAX_AGE = 7 * 24 * 60 * 60  # 7 days in seconds
 
 # Initialize serializer
 serializer = URLSafeTimedSerializer(SECRET_KEY)
-
-# Security warning
-if SECRET_KEY == "dev-secret-key-change-in-production":
-    logger.warning("Using default SECRET_KEY - NOT SECURE for production!")
 
 
 def create_session_token(user_id: int) -> str:

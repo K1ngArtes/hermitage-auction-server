@@ -4,6 +4,8 @@ services:
   fastapi-server:
     image: arturromanov1/auction-fastapi-server
     container_name: auction-fastapi-server
+    env_file:
+      - .env
     ports:
       - "8002:8000"
     volumes:
