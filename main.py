@@ -17,9 +17,9 @@ logger = get_logger(__name__)
 SECRET_KEY = os.getenv("SECRET_KEY")
 if not SECRET_KEY:
     raise ValueError("SECRET_KEY environment variable must be set")
-SESSION_MAX_AGE = 7 * 24 * 60 * 60  # 7 days in seconds
+SESSION_MAX_AGE = int(os.getenv("SESSION_MAX_AGE", "604800"))  # Default: 7 days in seconds
 
-# Initialize serializer
+# Initialize Cookie serializer
 serializer = URLSafeTimedSerializer(SECRET_KEY)
 
 
@@ -82,7 +82,7 @@ async def lifespan(app: FastAPI):
 
     logger.info("Application starting up")
 
-    db_path = "/app/data/auction.db"
+    db_path = os.getenv("DATABASE_PATH", "/app/data/auction.db")
 
     os.makedirs(os.path.dirname(db_path), exist_ok=True)
 
@@ -91,8 +91,9 @@ async def lifespan(app: FastAPI):
     # Enable WAL mode for better concurrent access
     await db_connection.execute("PRAGMA journal_mode=WAL")
 
-    # Set busy timeout to 5 seconds
-    await db_connection.execute("PRAGMA busy_timeout=5000")
+    # Set busy timeout
+    busy_timeout = int(os.getenv("DATABASE_BUSY_TIMEOUT", "5000"))
+    await db_connection.execute(f"PRAGMA busy_timeout={busy_timeout}")
 
     logger.info(f"Database connected: {db_path} (WAL mode enabled)")
 
@@ -106,14 +107,14 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 
 # Configure CORS
+cors_origins = os.getenv(
+    "CORS_ORIGINS",
+    "https://auriform-derrick-spectrographic.ngrok-free.dev"
+).split(",")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://localhost:80",
-        "http://localhost",
-        "https://auriform-derrick-spectrographic.ngrok-free.dev",
-    ],
+    allow_origins=[origin.strip() for origin in cors_origins],
     allow_credentials=True,
     allow_methods=["*"],  # Allow all methods (GET, POST, etc.)
     allow_headers=["*"],  # Allow all headers
@@ -306,12 +307,13 @@ async def login(request: LoginRequest, db: aiosqlite.Connection = Depends(get_db
         media_type="application/json"
     )
 
+    cookie_secure = os.getenv("COOKIE_SECURE", "true").lower() == "true"
     response.set_cookie(
         key="session",
         value=session_token,
         max_age=SESSION_MAX_AGE,
         httponly=True,
-        secure=True,  # Change to True in production with HTTPS
+        secure=cookie_secure,
         samesite="none",
         path="/"
     )
@@ -328,11 +330,12 @@ async def logout():
         media_type="application/json"
     )
 
+    cookie_secure = os.getenv("COOKIE_SECURE", "true").lower() == "true"
     response.delete_cookie(
         key="session",
         path="/",
         samesite="none",
-        secure=True
+        secure=cookie_secure
     )
 
     logger.info("User logged out - session cookie cleared")

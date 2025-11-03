@@ -3,13 +3,14 @@ import sys
 import os
 
 def setup_logging():
-    # Create logs directory if it doesn't exist
-    log_dir = "/app/logs"
+    log_dir = os.getenv("LOG_DIR", "/app/logs")
     os.makedirs(log_dir, exist_ok=True)
 
-    # Configure logging with both console and file handlers
+    log_level = os.getenv("LOG_LEVEL", "INFO").upper()
+    numeric_level = getattr(logging, log_level, logging.INFO)
+
     logging.basicConfig(
-        level=logging.INFO,
+        level=numeric_level,
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
         handlers=[
             logging.StreamHandler(sys.stdout),
