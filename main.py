@@ -46,6 +46,7 @@ class Item(BaseModel):
     author: str
     authorDescription: str | None
     minimumBid: int
+    currentBid: int | None
     year: int
     description: str
     showOrder: int
@@ -170,6 +171,7 @@ async def get_items(db: aiosqlite.Connection = Depends(get_db)):
                    i.author,
                    i.author_description,
                    MAX(i.min_bid, COALESCE(MAX(b.amount), 0)) as minimum_bid,
+                   MAX(b.amount) as current_bid,
                    i.year,
                    i.description,
                    i.show_order,
@@ -191,10 +193,11 @@ async def get_items(db: aiosqlite.Connection = Depends(get_db)):
                 author=row[3],
                 authorDescription=row[4],
                 minimumBid=row[5],
-                year=row[6],
-                description=row[7],
-                showOrder=row[8],
-                isClosed=bool(row[9])
+                currentBid=row[6],
+                year=row[7],
+                description=row[8],
+                showOrder=row[9],
+                isClosed=bool(row[10])
             )
             for row in rows
         ]
@@ -222,6 +225,7 @@ async def get_item(id: int, db: aiosqlite.Connection = Depends(get_db)):
                    i.author,
                    i.author_description,
                    MAX(i.min_bid, COALESCE(MAX(b.amount), 0)) as minimum_bid,
+                   MAX(b.amount) as current_bid,
                    i.year,
                    i.description,
                    i.show_order,
@@ -247,10 +251,11 @@ async def get_item(id: int, db: aiosqlite.Connection = Depends(get_db)):
             author=row[3],
             authorDescription=row[4],
             minimumBid=row[5],
-            year=row[6],
-            description=row[7],
-            showOrder=row[8],
-            isClosed=bool(row[9])
+            currentBid=row[6],
+            year=row[7],
+            description=row[8],
+            showOrder=row[9],
+            isClosed=bool(row[10])
         )
 
         logger.info(f"Successfully fetched item {id}")
