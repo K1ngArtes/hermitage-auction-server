@@ -178,8 +178,7 @@ async def get_items(db: aiosqlite.Connection = Depends(get_db)):
                    i.is_closed
                FROM items i
                LEFT JOIN bids b ON i.id = b.item_id
-               GROUP BY i.id, i.title, i.img_location, i.author, i.author_description,
-                        i.min_bid, i.year, i.description, i.show_order, i.is_closed
+               GROUP BY i.id
                ORDER BY i.show_order"""
         )
         rows = await cursor.fetchall()
@@ -233,8 +232,7 @@ async def get_item(id: int, db: aiosqlite.Connection = Depends(get_db)):
                FROM items i
                LEFT JOIN bids b ON i.id = b.item_id
                WHERE i.id = ?
-               GROUP BY i.id, i.title, i.img_location, i.author, i.author_description,
-                        i.min_bid, i.year, i.description, i.show_order, i.is_closed""",
+               GROUP BY i.id""",
             (id,)
         )
         row = await cursor.fetchone()
