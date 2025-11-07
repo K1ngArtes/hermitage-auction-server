@@ -281,7 +281,7 @@ async def login(request: LoginRequest, db: aiosqlite.Connection = Depends(get_db
         await db.commit()
         user_id = cursor.lastrowid
         await cursor.close()
-        logger.info(f"Created new user with id {user_id}: {request.email}")
+        logger.info(f"Created new user with id {user_id}: {request.name} - {request.email}")
 
     except aiosqlite.IntegrityError:
         logger.info(f"User already exists: {request.email}")
