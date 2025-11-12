@@ -108,6 +108,13 @@ class BidInfo(BaseModel):
     createdAt: str
 
 
+class DonationInfo(BaseModel):
+    userName: str
+    userEmail: str
+    amount: int
+    createdAt: str
+
+
 class AdminLoginRequest(BaseModel):
     password: str
 
@@ -763,3 +770,41 @@ async def get_all_bids(
     except Exception as e:
         logger.error(f"Failed to fetch admin bids: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to fetch bids")
+
+@app.get("/admin/donations", response_model=list[DonationInfo])
+async def get_all_donations(
+    db: aiosqlite.Connection = Depends(get_db),
+    _: bool = Depends(verify_admin_session)
+):
+    """Get all donations (Admin only)"""
+    try:
+        cursor = await db.execute(
+            """SELECT
+                   a.name,
+                   a.email,
+                   d.amount,
+                   d.updated_at
+               FROM donations d
+               JOIN accounts a ON d.user_id = a.id
+               ORDER BY d.updated_at DESC"""
+        )
+        rows = await cursor.fetchall()
+        await cursor.close()
+
+        donations = [
+            DonationInfo(
+                userName=row[0],
+                userEmail=row[1],
+                amount=row[2],
+                createdAt=row[3]
+            )
+            for row in rows
+        ]
+
+        return donations
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to fetch admin donations: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to fetch donations")
