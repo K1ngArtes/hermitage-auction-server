@@ -5,7 +5,6 @@ from contextlib import asynccontextmanager
 
 import aiosqlite
 from fastapi import FastAPI, HTTPException, Depends, Response, Cookie
-from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from pydantic import BaseModel
 from starlette.middleware.cors import CORSMiddleware
 from itsdangerous import URLSafeTimedSerializer, SignatureExpired, BadSignature
@@ -20,28 +19,10 @@ SECRET_KEY = os.getenv("SECRET_KEY")
 if not SECRET_KEY:
     raise ValueError("SECRET_KEY environment variable must be set")
 SESSION_MAX_AGE = int(os.getenv("SESSION_MAX_AGE", "604800"))  # Default: 7 days in seconds
+ADMIN_SESSION_MAX_AGE = int(os.getenv("ADMIN_SESSION_MAX_AGE", "1800"))  # Default: 30 minutes
 
 # Initialize Cookie serializer
 serializer = URLSafeTimedSerializer(SECRET_KEY)
-
-# Initialize HTTP Basic Auth
-security = HTTPBasic()
-
-
-def verify_admin(credentials: HTTPBasicCredentials = Depends(security)):
-    """Verify admin credentials using HTTP Basic Auth"""
-    admin_password = os.getenv("ADMIN_PASSWORD")
-    if not admin_password:
-        raise ValueError("ADMIN_PASSWORD environment variable must be set")
-
-    is_correct = secrets.compare_digest(credentials.password, admin_password)
-    if not is_correct:
-        raise HTTPException(
-            status_code=401,
-            detail="Invalid credentials",
-            headers={"WWW-Authenticate": "Basic"},
-        )
-    return credentials
 
 
 def create_session_token(user_id: int) -> str:
@@ -57,6 +38,31 @@ def validate_session_token(token: str) -> int | None:
     except (SignatureExpired, BadSignature) as e:
         logger.warning(f"Invalid session token: {str(e)}")
         return None
+
+
+def create_admin_session_token() -> str:
+    """Create signed admin session token (user_id = 0 for admin)"""
+    return serializer.dumps(0)
+
+
+def validate_admin_session(token: str) -> bool:
+    """Validate admin session token with 30-minute expiry"""
+    try:
+        user_id = serializer.loads(token, max_age=ADMIN_SESSION_MAX_AGE)
+        return user_id == 0  # Admin is identified by user_id = 0
+    except (SignatureExpired, BadSignature) as e:
+        logger.warning(f"Invalid admin session token: {str(e)}")
+        return False
+
+
+def verify_admin_session(admin_session: str | None = Cookie(None)):
+    """Dependency to verify admin session cookie"""
+    if not admin_session or not validate_admin_session(admin_session):
+        raise HTTPException(
+            status_code=401,
+            detail="Admin authentication required"
+        )
+    return True
 
 
 # Pydantic Models
@@ -100,6 +106,10 @@ class BidInfo(BaseModel):
     bidderName: str
     amount: int
     createdAt: str
+
+
+class AdminLoginRequest(BaseModel):
+    password: str
 
 
 db_connection = None
@@ -370,6 +380,67 @@ async def logout():
     )
 
     logger.info("User logged out - session cookie cleared")
+    return response
+
+
+@app.post("/admin/login")
+async def admin_login(request: AdminLoginRequest):
+    """Admin login - validates password and sets admin session cookie"""
+    try:
+        admin_password = os.getenv("ADMIN_PASSWORD")
+        if not admin_password:
+            raise ValueError("ADMIN_PASSWORD environment variable must be set")
+
+        is_correct = secrets.compare_digest(request.password, admin_password)
+        if not is_correct:
+            logger.warning("Admin login failed: invalid password")
+            raise HTTPException(status_code=401, detail="Invalid admin password")
+
+        admin_session_token = create_admin_session_token()
+
+        response = Response(
+            content='{"success": true, "message": "Admin logged in successfully"}',
+            media_type="application/json"
+        )
+
+        cookie_secure = os.getenv("COOKIE_SECURE", "true").lower() == "true"
+        response.set_cookie(
+            key="admin_session",
+            value=admin_session_token,
+            max_age=ADMIN_SESSION_MAX_AGE,
+            httponly=True,
+            secure=cookie_secure,
+            samesite="none",
+            path="/"
+        )
+
+        logger.info("Admin session cookie set")
+        return response
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Admin login failed: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Admin login failed")
+
+
+@app.post("/admin/logout")
+async def admin_logout():
+    """Admin logout by clearing the admin session cookie. Currently not used."""
+    response = Response(
+        content='{"success": true, "message": "Admin logged out successfully"}',
+        media_type="application/json"
+    )
+
+    cookie_secure = os.getenv("COOKIE_SECURE", "true").lower() == "true"
+    response.delete_cookie(
+        key="admin_session",
+        path="/",
+        samesite="none",
+        secure=cookie_secure
+    )
+
+    logger.info("Admin logged out - admin session cookie cleared")
     return response
 
 
@@ -651,11 +722,11 @@ async def get_donation(
 @app.get("/admin/bids", response_model=dict[int, list[BidInfo]])
 async def get_all_bids(
     db: aiosqlite.Connection = Depends(get_db),
-    credentials: HTTPBasicCredentials = Depends(verify_admin)
+    _: bool = Depends(verify_admin_session)
 ):
-    """Get all bids for all items, grouped by item_id (Admin only - requires HTTP Basic Auth)"""
+    """Get all bids for all items, grouped by item_id (Admin only - requires admin session)"""
     try:
-        logger.info(f"Admin access to bids by user: {credentials.username}")
+        logger.info("Admin access to bids")
         cursor = await db.execute(
             """SELECT
                    b.item_id,
