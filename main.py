@@ -1,9 +1,11 @@
 import os
+import secrets
 import uuid
 from contextlib import asynccontextmanager
 
 import aiosqlite
 from fastapi import FastAPI, HTTPException, Depends, Response, Cookie
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from pydantic import BaseModel
 from starlette.middleware.cors import CORSMiddleware
 from itsdangerous import URLSafeTimedSerializer, SignatureExpired, BadSignature
@@ -21,6 +23,25 @@ SESSION_MAX_AGE = int(os.getenv("SESSION_MAX_AGE", "604800"))  # Default: 7 days
 
 # Initialize Cookie serializer
 serializer = URLSafeTimedSerializer(SECRET_KEY)
+
+# Initialize HTTP Basic Auth
+security = HTTPBasic()
+
+
+def verify_admin(credentials: HTTPBasicCredentials = Depends(security)):
+    """Verify admin credentials using HTTP Basic Auth"""
+    admin_password = os.getenv("ADMIN_PASSWORD")
+    if not admin_password:
+        raise ValueError("ADMIN_PASSWORD environment variable must be set")
+
+    is_correct = secrets.compare_digest(credentials.password, admin_password)
+    if not is_correct:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid credentials",
+            headers={"WWW-Authenticate": "Basic"},
+        )
+    return credentials
 
 
 def create_session_token(user_id: int) -> str:
@@ -72,6 +93,13 @@ class BidRequest(BaseModel):
 
 class DonateRequest(BaseModel):
     amount: int
+
+
+class BidInfo(BaseModel):
+    itemTitle: str
+    bidderName: str
+    amount: int
+    createdAt: str
 
 
 db_connection = None
@@ -619,3 +647,48 @@ async def get_donation(
     except Exception as e:
         logger.error(f"Failed to retrieve donation: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to retrieve donation")
+
+@app.get("/admin/bids", response_model=dict[int, list[BidInfo]])
+async def get_all_bids(
+    db: aiosqlite.Connection = Depends(get_db),
+    credentials: HTTPBasicCredentials = Depends(verify_admin)
+):
+    """Get all bids for all items, grouped by item_id (Admin only - requires HTTP Basic Auth)"""
+    try:
+        logger.info(f"Admin access to bids by user: {credentials.username}")
+        cursor = await db.execute(
+            """SELECT
+                   b.item_id,
+                   i.title,
+                   a.name,
+                   b.amount,
+                   b.created_at
+               FROM bids b
+               JOIN items i ON b.item_id = i.id
+               JOIN accounts a ON b.user_id = a.id
+               ORDER BY b.item_id, b.created_at DESC"""
+        )
+        rows = await cursor.fetchall()
+        await cursor.close()
+
+        # Group bids by item_id
+        bids_by_item: dict[int, list[BidInfo]] = {}
+        for row in rows:
+            item_id = row[0]
+            bid_info = BidInfo(
+                itemTitle=row[1],
+                bidderName=row[2],
+                amount=row[3],
+                createdAt=row[4]
+            )
+
+            if item_id not in bids_by_item:
+                bids_by_item[item_id] = []
+            bids_by_item[item_id].append(bid_info)
+        return bids_by_item
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to fetch admin bids: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to fetch bids")
