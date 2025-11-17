@@ -104,6 +104,7 @@ class DonateRequest(BaseModel):
 class BidInfo(BaseModel):
     itemTitle: str
     bidderName: str
+    userEmail: str
     amount: int
     createdAt: str
 
@@ -739,6 +740,7 @@ async def get_all_bids(
                    b.item_id,
                    i.title,
                    a.name,
+                   a.email,
                    b.amount,
                    b.created_at
                FROM bids b
@@ -756,8 +758,9 @@ async def get_all_bids(
             bid_info = BidInfo(
                 itemTitle=row[1],
                 bidderName=row[2],
-                amount=row[3],
-                createdAt=row[4]
+                userEmail=row[3],
+                amount=row[4],
+                createdAt=row[5]
             )
 
             if item_id not in bids_by_item:
